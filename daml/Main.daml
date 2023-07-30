@@ -1,44 +1,116 @@
-module Main where
+module Main where 
 
-import Daml.Script
+import DA.Optional
+import DA.Date (toDateUTC)
 
-type AssetId = ContractId Asset
+template AuctionApp 
+    with 
+        bidder: Party 
+        issuer: Party 
 
-template Asset
-  with
-    issuer : Party
-    owner  : Party
-    name   : Text
-  where
-    ensure name /= ""
-    signatory issuer
-    observer owner
-    choice Give : AssetId
-      with
-        newOwner : Party
-      controller owner
-      do create this with
-           owner = newOwner
+        id: Text  --this is external id that is unique for a bidder, e.g. driving-license no., SSN, etc.
+        name: Text
+        address: Text
+        email: Text
+        phone: Optional Text
+        timestamp: Time 
+        dob: Date 
+       
+    where 
+        signatory bidder
+        observer issuer 
+         
+        choice SubmitApplication: ContractId AuctionApp 
+            with 
+                appBidder: Party 
+                appAuction: Party
 
-setup : Script AssetId
-setup = script do
--- user_setup_begin
-  alice <- allocatePartyWithHint "Alice" (PartyIdHint "Alice")
-  bob <- allocatePartyWithHint "Bob" (PartyIdHint "Bob")
-  aliceId <- validateUserId "alice"
-  bobId <- validateUserId "bob"
-  createUser (User aliceId (Some alice)) [CanActAs alice]
-  createUser (User bobId (Some bob)) [CanActAs bob]
--- user_setup_end
+                bidderId: Text
+                bidderName: Text
+                bidderAddress: Text
+                bidderEmail: Text
+                bidderPhone: Text
+                appTimeStamp: Time 
+                bidderDob: Date 
+            controller bidder 
+                do 
+                    create AuctionApp  
+                        with 
+                            bidder = appBidder
+                            issuer = appAuction
 
-  aliceTV <- submit alice do
-    createCmd Asset with
-      issuer = alice
-      owner = alice
-      name = "TV"
+                            id = bidderId
+                            name = bidderName
+                            address = bidderAddress
+                            email = bidderEmail
+                            phone = Some bidderPhone
+                            timestamp = appTimeStamp
+                            dob = bidderDob 
+                        
+        choice ReviewApplication: Optional (ContractId AuctionAccount)
+            controller issuer 
+                do 
+                    account <- lookupByKey @AuctionAccount (issuer, id)
+                    now <- getTime
+                    if (isSome account) then 
+                        return None
+                    else do
+                        account <- create AuctionAccount with                                
+                                timestamp = now                                 
+                                balance = 0.0   
+                                ..
+                        return (Some account)
 
-  bobTV <- submit alice do
-    exerciseCmd aliceTV Give with newOwner = bob
+template AuctionAccount 
+    with
+        bidder: Party 
+        issuer: Party 
 
-  submit bob do
-    exerciseCmd bobTV Give with newOwner = alice
+        id: Text 
+        name: Text
+        address: Text
+        email: Text
+        phone: Optional Text
+        timestamp: Time 
+        dob: Date 
+        balance: Decimal
+
+    where 
+        signatory bidder, issuer 
+        
+        key (issuer, id): (Party, Text)
+        maintainer key._1 
+
+        choice AddBalance : ContractId AuctionAccount 
+            with 
+                amount: Decimal 
+            controller issuer 
+            do 
+                create AuctionAccount with 
+                    balance = balance + amount
+                    ..
+
+template AuctionService 
+    with 
+        bidder: Party
+        issuer: Party 
+    where 
+        signatory issuer 
+        observer bidder 
+
+        nonconsuming choice CreateBlankApplication: ContractId AuctionApp
+            controller bidder 
+                do 
+                    now <- getTime
+                    create AuctionApp 
+                        with 
+                        bidder 
+                        issuer 
+
+                        id = ""
+                        name = ""
+                        address = ""
+                        email = ""
+                        phone = Some ""
+                        timestamp = now
+                        dob = toDateUTC now

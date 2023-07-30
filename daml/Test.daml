@@ -1,0 +1,96 @@
+module Test where 
+
+import Daml.Script
+import Main
+import DA.Date (date, Month(Jan))
+import DA.Optional (fromSome)
+
+
+-- Problem 1
+
+-- create test-data structure
+data AuctionData = AuctionData with 
+    bidder1: Party 
+    bidder2: Party
+    bidder3: Party
+    bidder4: Party
+    issuer: Party 
+    auctionServiceCid: ContractId AuctionService
+
+
+-- create function to allocate values to test-data structure
+setupAuctionData: Text -> Text -> Text -> Text -> Text -> Script AuctionData 
+setupAuctionData t1 t2 t3 t4 t5 = script do 
+    bidder1 <- allocateParty (t1)
+    bidder2 <- allocateParty (t2)
+    bidder3 <- allocateParty (t3)
+    bidder4 <- allocateParty (t4)
+    issuer <- allocateParty (t5)
+    auctionServiceCid <- submit issuer do 
+        createCmd AuctionService with 
+            bidder = bidder1
+            issuer
+    
+    return $ AuctionData with 
+            ..
+
+-- test script to print the test-data
+testScript1: Script () 
+testScript1 = do 
+    auctionData <- setupAuctionData "Alice" "Bob" "Caron" "David" "Issuer"
+    debug auctionData.bidder1
+    debug auctionData.bidder2
+    debug auctionData.bidder3
+    debug auctionData.bidder4
+    debug auctionData.issuer
+    debug auctionData.auctionServiceCid
+    return ()
+
+
+-- test script for unhappy path
+testScript2: Script () 
+testScript2 = do 
+    auctionData <- setupAuctionData "Alice" "Bob" "Caron" "David" "Issuer"
+    now <- getTime
+    
+    aliceApplicationCid <- submit auctionData.bidder1 do 
+        exerciseCmd auctionData.auctionServiceCid CreateBlankApplication 
+
+    submitMustFail auctionData.bidder2 do 
+        exerciseCmd aliceApplicationCid SubmitApplication 
+            with 
+                appBidder = auctionData.bidder1 
+                appAuction = auctionData.issuer
+                bidderId = "123"
+                bidderName = "Alice"
+                bidderAddress = "ABC Main Street, NY"
+                bidderEmail = "alice@wonderland.io"
+                bidderPhone = "123-555-1234"
+                appTimeStamp = now 
+                bidderDob = date 2000 Jan 10
+
+ 
+    aliceApplicationCid <- submit auctionData.bidder1 do 
+        exerciseCmd aliceApplicationCid SubmitApplication 
+            with 
+                appBidder = auctionData.bidder1 
+                appAuction = auctionData.issuer
+                bidderId = "123"
+                bidderName = "Alice"
+                bidderAddress = "ABC Main Street, NY"
+                bidderEmail = "alice@wonderland.io"
+                bidderPhone = "123-555-1234"
+                appTimeStamp = now 
+                bidderDob = date 2000 Jan 10
+    
+    aliceAccountCid <- submit auctionData.issuer do 
+        exerciseCmd aliceApplicationCid ReviewApplication 
+
+    let cid = fromSome aliceAccountCid
+
+    aliceAccountCid <- submit auctionData.issuer do 
+        exerciseCmd cid AddBalance 
+            with amount = 100.0
+
+
+    return ()

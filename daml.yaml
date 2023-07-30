@@ -4,7 +4,7 @@
 sdk-version: 2.6.4
 name: daml-capstone-auction-project-new
 source: daml
-init-script: Main:setup
+# init-script: Main:setup
 version: 0.0.1
 dependencies:
   - daml-prim
