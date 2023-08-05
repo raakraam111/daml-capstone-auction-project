@@ -1,96 +1,67 @@
-module Test where 
+module Test where
 
-import Daml.Script
 import Main
-import DA.Date (date, Month(Jan))
-import DA.Optional (fromSome)
+import Setup
+import DA.Date 
+import Daml.Script
+
+testCreateAuctionAcc : Script (TestParties, TestAuctionAccInfos, ContractId AuctionAcc)
+testCreateAuctionAcc = script do
+    (testParties@TestParties{..}, testAuctionAccInfos@TestAuctionAccInfos{..}) <- setupAuctionAccInfos
+    -- 1. bidder creates a AuctionAcc contract
+    acc1 <- submit auctioneer do
+        createCmd AuctionAcc with
+            bidder 
+            auctioneer 
+            bidderId = accInfo1.bidderId
+            bidderName = accInfo1.bidderName
+            bidderPhone = accInfo1.bidderPhone
+            isVerified = accInfo1.isVerified 
+            accBalance = accInfo1.accBalance 
+
+    return (testParties, testAuctionAccInfos, acc1)
+
+testVerifyAuctionAcc : Script (TestParties, TestAuctionAccInfos , ContractId AuctionAcc)
+testVerifyAuctionAcc = script do
+    (testParties@TestParties{..}, testAuctionAccInfos@TestAuctionAccInfos{..}, acc1Cid ) <- testCreateAuctionAcc
+    -- 2. auctioneer verifies the Auction contract
+    acc1Verified <- submit auctioneer do
+        exerciseCmd acc1Cid VerifyAcc with 
+            isVerified = True 
+
+    return (testParties, testAuctionAccInfos, acc1Verified)
+
+testDepositAuctionAcc : Script (TestParties, TestAuctionAccInfos , ContractId AuctionAcc)
+testDepositAuctionAcc = script do
+    (testParties@TestParties{..}, testAuctionAccInfos@TestAuctionAccInfos{..}, acc2VerifiedCid) <- testVerifyAuctionAcc 
+
+    -- 3. bidder deposits money to the Auction contract
+    acc1VerifiedAndDeposited <- submit bidder do 
+        exerciseCmd acc2VerifiedCid Deposit with 
+            amount = 1000.0 
+
+    return (testParties, testAuctionAccInfos, acc1VerifiedAndDeposited)
+
+testBidAuction : Script (TestParties, TestAuctionAccInfos , ContractId BidAuction)
+testBidAuction = script do
+    (testParties@TestParties{..}, testAuctionAccInfos@TestAuctionAccInfos{..}, acc1VerifiedAndDepositedCid) <- testDepositAuctionAcc 
+    -- auctionCid <- setupAuction
+    -- 4. auctioneer bids on the Auction contract
+    auctionOne <- submit auctioneer do
+        createCmd BidAuction with
+            bidder = bidder
+            auctioneer = auctioneer
+            highestBid = Cash with
+                value = 0.0
+                currency = "USD"
+            highestBidder = bidder
+            itemName = "itemName"
+            itemDetails = "itemDetails"
+            reservePrice = Cash with
+                value = 0.0
+                currency = "USD"
+            endDate = date 2021 Dec 31
+            isActive = True     
 
 
--- Problem 1
-
--- create test-data structure
-data AuctionData = AuctionData with 
-    bidder1: Party 
-    bidder2: Party
-    bidder3: Party
-    bidder4: Party
-    issuer: Party 
-    auctionServiceCid: ContractId AuctionService
-
-
--- create function to allocate values to test-data structure
-setupAuctionData: Text -> Text -> Text -> Text -> Text -> Script AuctionData 
-setupAuctionData t1 t2 t3 t4 t5 = script do 
-    bidder1 <- allocateParty (t1)
-    bidder2 <- allocateParty (t2)
-    bidder3 <- allocateParty (t3)
-    bidder4 <- allocateParty (t4)
-    issuer <- allocateParty (t5)
-    auctionServiceCid <- submit issuer do 
-        createCmd AuctionService with 
-            bidder = bidder1
-            issuer
-    
-    return $ AuctionData with 
-            ..
-
--- test script to print the test-data
-testScript1: Script () 
-testScript1 = do 
-    auctionData <- setupAuctionData "Alice" "Bob" "Caron" "David" "Issuer"
-    debug auctionData.bidder1
-    debug auctionData.bidder2
-    debug auctionData.bidder3
-    debug auctionData.bidder4
-    debug auctionData.issuer
-    debug auctionData.auctionServiceCid
-    return ()
-
-
--- test script for unhappy path
-testScript2: Script () 
-testScript2 = do 
-    auctionData <- setupAuctionData "Alice" "Bob" "Caron" "David" "Issuer"
-    now <- getTime
-    
-    aliceApplicationCid <- submit auctionData.bidder1 do 
-        exerciseCmd auctionData.auctionServiceCid CreateBlankApplication 
-
-    submitMustFail auctionData.bidder2 do 
-        exerciseCmd aliceApplicationCid SubmitApplication 
-            with 
-                appBidder = auctionData.bidder1 
-                appAuction = auctionData.issuer
-                bidderId = "123"
-                bidderName = "Alice"
-                bidderAddress = "ABC Main Street, NY"
-                bidderEmail = "alice@wonderland.io"
-                bidderPhone = "123-555-1234"
-                appTimeStamp = now 
-                bidderDob = date 2000 Jan 10
-
- 
-    aliceApplicationCid <- submit auctionData.bidder1 do 
-        exerciseCmd aliceApplicationCid SubmitApplication 
-            with 
-                appBidder = auctionData.bidder1 
-                appAuction = auctionData.issuer
-                bidderId = "123"
-                bidderName = "Alice"
-                bidderAddress = "ABC Main Street, NY"
-                bidderEmail = "alice@wonderland.io"
-                bidderPhone = "123-555-1234"
-                appTimeStamp = now 
-                bidderDob = date 2000 Jan 10
-    
-    aliceAccountCid <- submit auctionData.issuer do 
-        exerciseCmd aliceApplicationCid ReviewApplication 
-
-    let cid = fromSome aliceAccountCid
-
-    aliceAccountCid <- submit auctionData.issuer do 
-        exerciseCmd cid AddBalance 
-            with amount = 100.0
-
-
-    return ()
+    return (testParties, testAuctionAccInfos, auctionOne)

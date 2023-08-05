@@ -1,116 +1,123 @@
 module Main where 
 
-import DA.Optional
-import DA.Date (toDateUTC)
+type AuctionAccId = ContractId AuctionAcc
+type BidAuctionId = ContractId BidAuction
 
-template AuctionApp 
-    with 
-        bidder: Party 
-        issuer: Party 
+data Cash = Cash with
+    value: Decimal 
+    currency: Text 
+        deriving (Show, Eq, Ord)
 
-        id: Text  --this is external id that is unique for a bidder, e.g. driving-license no., SSN, etc.
-        name: Text
-        address: Text
-        email: Text
-        phone: Optional Text
-        timestamp: Time 
-        dob: Date 
-       
-    where 
-        signatory bidder
-        observer issuer 
-         
-        choice SubmitApplication: ContractId AuctionApp 
-            with 
-                appBidder: Party 
-                appAuction: Party
-
-                bidderId: Text
-                bidderName: Text
-                bidderAddress: Text
-                bidderEmail: Text
-                bidderPhone: Text
-                appTimeStamp: Time 
-                bidderDob: Date 
-            controller bidder 
-                do 
-                    create AuctionApp  
-                        with 
-                            bidder = appBidder
-                            issuer = appAuction
-
-                            id = bidderId
-                            name = bidderName
-                            address = bidderAddress
-                            email = bidderEmail
-                            phone = Some bidderPhone
-                            timestamp = appTimeStamp
-                            dob = bidderDob 
-                        
-        choice ReviewApplication: Optional (ContractId AuctionAccount)
-            controller issuer 
-                do 
-                    account <- lookupByKey @AuctionAccount (issuer, id)
-                    now <- getTime
-                    if (isSome account) then 
-                        return None
-                    else do
-                        account <- create AuctionAccount with                                
-                                timestamp = now                                 
-                                balance = 0.0   
-                                ..
-                        return (Some account)
-
-template AuctionAccount 
+template AuctionAcc
     with
-        bidder: Party 
-        issuer: Party 
-
-        id: Text 
-        name: Text
-        address: Text
-        email: Text
-        phone: Optional Text
-        timestamp: Time 
-        dob: Date 
-        balance: Decimal
-
-    where 
-        signatory bidder, issuer 
-        
-        key (issuer, id): (Party, Text)
-        maintainer key._1 
-
-        choice AddBalance : ContractId AuctionAccount 
-            with 
-                amount: Decimal 
-            controller issuer 
-            do 
-                create AuctionAccount with 
-                    balance = balance + amount
-                    ..
-
-template AuctionService 
-    with 
+        auctioneer: Party
         bidder: Party
-        issuer: Party 
-    where 
-        signatory issuer 
-        observer bidder 
+        
+        bidderId: Text
+        bidderName: Text
+        bidderPhone: Optional Text
+        isVerified: Bool
+        accBalance: Cash
+    
+    where
+        signatory auctioneer
+        observer bidder
 
-        nonconsuming choice CreateBlankApplication: ContractId AuctionApp
-            controller bidder 
-                do 
-                    now <- getTime
-                    create AuctionApp 
-                        with 
-                        bidder 
-                        issuer 
+        key (auctioneer, bidderId): (Party, Text)
+        maintainer key._1
 
-                        id = ""
-                        name = ""
-                        address = ""
-                        email = ""
-                        phone = Some ""
-                        timestamp = now
-                        dob = toDateUTC now
+        choice CreateAcc: AuctionAccId
+            with
+                appBidderId: Text
+                appBidderName: Text
+                appBidderPhone: Optional Text  
+            controller bidder
+            do
+                -- assertMsg "Account already exists" (not exists lookupByKey @AuctionAcc (auctioneer, bidderId))
+                create this with
+                    bidderId = appBidderId 
+                    bidderName = appBidderName
+                    bidderPhone = appBidderPhone  
+             
+        choice VerifyAcc: AuctionAccId
+            with
+                isVerified: Bool
+            controller auctioneer
+            do
+                -- assertMsg "Account does not exist" (exists @AuctionAcc (auctioneer, bidderId))
+                assertMsg "Account already verified" isVerified 
+                create this with
+                    isVerified = True 
+        
+        choice Deposit: AuctionAccId
+            with
+                amount: Decimal 
+            controller bidder
+            do 
+                assertMsg "Account not verified" ( isVerified)
+                assertMsg "Deposit amount must be positive" (amount > 0.0)
+                create this with
+                    accBalance.value = accBalance.value + amount
+ 
+template BidAuction
+    with
+        auctioneer: Party
+        bidder: Party
+        highestBid: Cash
+        highestBidder: Party
+        itemName: Text
+        itemDetails: Text
+        reservePrice: Cash
+        endDate: Date
+        isActive: Bool
+
+    where
+        signatory auctioneer
+        observer bidder
+
+        key (auctioneer, itemName): (Party, Text)
+        maintainer key._1
+
+        ensure isActive
+        -- Choice Bid- can work in 2 ways
+        -- 1. Bidder can bid for an item and if the bid is higher than the highest bid, then the highest bid is updated and auction is still active and no amount is deducted from AuctionAcc, also bidder cannot bid more than what he has in the AuctionAcc.
+        -- 2. Bidder can bid for an item and if the bid is higher than the highest bid and the reserve price is met, then the highest bid is updated and auction is no longer active and amount is deducted from AuctionAcc.
+
+        choice Bid: ContractId BidAuction
+            with
+                bidAmount: Decimal
+                bidderId: Text
+            controller bidder
+            
+            do
+                -- Check if the auction is active
+                assertMsg "Auction is not active" isActive 
+
+                -- Check if the bid amount is greater than the current highest bid
+                assertMsg "Bid amount must be greater than the current highest bid" (bidAmount > highestBid.value)
+
+                -- Check if the bidder has enough balance in the AuctionAcc
+                bidderAcc <- fetchByKey @AuctionAcc (auctioneer, bidderId)
+                assertMsg "Bidder does not have a verified AuctionAcc" ( bidderAcc._2.isVerified)
+                let acc = bidderAcc._2 
+                assertMsg "Bidder does not have enough balance to place the bid" (acc.accBalance.value >= bidAmount)
+
+                -- Update the highest bid and highest bidder
+                create this with
+                    highestBid = Cash{value = bidAmount,currency = "USD"}
+                    highestBidder = bidder 
+     
+        choice FinalizeAuction: BidAuctionId
+            controller auctioneer
+            do
+                assertMsg "Auction is not active" isActive
+                assertMsg "Reserve price not met" (highestBid.value >= reservePrice.value)
+                create this with
+                    isActive = False
+
+        choice Cancel: BidAuctionId
+            controller auctioneer
+            do
+                assertMsg "Auction is not active" isActive
+                create this with
+                    isActive = False

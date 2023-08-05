@@ -1,0 +1,93 @@
+module Setup where
+
+import Main
+
+import Daml.Script
+
+data TestParties = TestParties with
+    auctioneer: Party
+    bidder: Party
+
+setupTestParties : Script TestParties
+setupTestParties = script do
+    -- 1. Allocate parties with the given display name
+    auctioneer <- allocatePartyWithHint "Auctioneer" (PartyIdHint "AUC")
+    bidder <- allocatePartyWithHint "Bidder" (PartyIdHint "BID")
+
+    return TestParties with
+        auctioneer
+        bidder
+
+setupUsers : Script (ContractId AuctionAcc)
+setupUsers = script do
+    (testParties@TestParties{..}, testAuctionAccInfos@TestAuctionAccInfos{..}) <- setupAuctionAccInfos
+
+    -- 2. Construct user-ids from text
+    auctionId <- validateUserId "AuctionId"   
+    aliceId <- validateUserId "Alice"
+    bobId <- validateUserId "Bob"
+    caronId <- validateUserId "Caron"
+
+    -- 3. Create users with the given rights 
+    createUser (User auctionId (Some auctioneer)) [CanActAs auctioneer]  
+    createUser (User aliceId (Some bidder)) [CanActAs bidder]
+    createUser (User bobId (Some bidder)) [CanActAs bidder]
+    createUser (User caronId (Some bidder)) [CanActAs bidder]
+
+    submit auctioneer do
+        createCmd AuctionAcc with
+            bidder = bidder
+            auctioneer = auctioneer
+            bidderId = "bidderId1"
+            bidderName = "bidderName1"
+            bidderPhone = Some "123456789"
+            isVerified = False
+            accBalance = Cash with
+                value = 0.0
+                currency = "USD"
+
+
+data TestAuctionAccInfos = TestAuctionAccInfos with
+    accInfo1: AuctionAcc 
+    accInfo2: AuctionAcc 
+    accInfo3: AuctionAcc 
+
+setupAuctionAccInfos : Script (TestParties, TestAuctionAccInfos)
+setupAuctionAccInfos = script do
+    testParties@TestParties{..} <- setupTestParties
+    let
+        accInfo1 = AuctionAcc with  -- Change AuctionAccInfo to AuctionAcc
+            auctioneer = auctioneer
+            bidder = bidder
+            bidderId = "bidderId1"
+            bidderName = "bidderName1"
+            bidderPhone = Some "1234567891"
+            isVerified = False
+            accBalance = Cash with
+                value = 0.0
+                currency = "USD"
+
+        accInfo2 = AuctionAcc with  -- Change AuctionAccInfo to AuctionAcc
+            auctioneer = auctioneer
+            bidder = bidder
+            bidderId = "bidderId2"
+            bidderName = "bidderName2"
+            bidderPhone = Some "1234567892"
+            isVerified = False
+            accBalance = Cash with
+                value = 0.0
+                currency = "USD"
+
+        accInfo3 = AuctionAcc with  -- Change AuctionAccInfo to AuctionAcc
+            auctioneer = auctioneer
+            bidder = bidder
+            bidderId = "bidderId3"
+            bidderName = "bidderName3"
+            bidderPhone = Some "1234567893"
+            isVerified = False
+            accBalance = Cash with
+                value = 0.0
+                currency = "USD"
+
+    return (testParties, TestAuctionAccInfos with {accInfo1, accInfo2, accInfo3})
+ 
