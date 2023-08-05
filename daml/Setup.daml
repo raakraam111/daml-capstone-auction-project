@@ -1,42 +1,67 @@
 module Setup where
 
 import Main
-
+import DA.List
 import Daml.Script
 
 data TestParties = TestParties with
     auctioneer: Party
-    bidder: Party
+    bidder : [Party]    
 
-setupTestParties : Script TestParties
+setupTestParties : Script (TestParties )
 setupTestParties = script do
     -- 1. Allocate parties with the given display name
     auctioneer <- allocatePartyWithHint "Auctioneer" (PartyIdHint "AUC")
-    bidder <- allocatePartyWithHint "Bidder" (PartyIdHint "BID")
+    bidder1 <- allocatePartyWithHint "Bidder1" (PartyIdHint "BIDDER1")
+    bidder2 <- allocatePartyWithHint "Bidder2" (PartyIdHint "BIDDER2")
+    bidder3 <- allocatePartyWithHint "Bidder3" (PartyIdHint "BIDDER3")
+    bidder4 <- allocatePartyWithHint "Bidder4" (PartyIdHint "BIDDER4") 
 
-    return TestParties with
-        auctioneer
-        bidder
+    return (
+        TestParties with
+            auctioneer
+            bidder = [bidder1, bidder2, bidder3, bidder4] 
+        )
+
+
+data TestBidders = TestBidders with
+    firstBidder: Party
+    secondBidder: Party
+    thirdBidder: Party
+    fourthBidder: Party
+
+setupTestBidders : Script (TestParties, TestBidders)
+setupTestBidders = script do
+    testParties@TestParties{..} <- setupTestParties
+    return (testParties, 
+            TestBidders with
+                firstBidder = head bidder
+                secondBidder = head (tail bidder)
+                thirdBidder = head (tail (tail bidder))
+                fourthBidder = last bidder
+            )
 
 setupUsers : Script (ContractId AuctionAcc)
 setupUsers = script do
-    (testParties@TestParties{..}, testAuctionAccInfos@TestAuctionAccInfos{..}) <- setupAuctionAccInfos
+    (testParties@TestParties{..}, testBidders@TestBidders{..}, testAuctionAccInfos@TestAuctionAccInfos{..}) <- setupAuctionAccInfos
 
     -- 2. Construct user-ids from text
     auctionId <- validateUserId "AuctionId"   
     aliceId <- validateUserId "Alice"
     bobId <- validateUserId "Bob"
     caronId <- validateUserId "Caron"
-
+    davidId <- validateUserId "David"
+ 
     -- 3. Create users with the given rights 
     createUser (User auctionId (Some auctioneer)) [CanActAs auctioneer]  
-    createUser (User aliceId (Some bidder)) [CanActAs bidder]
-    createUser (User bobId (Some bidder)) [CanActAs bidder]
-    createUser (User caronId (Some bidder)) [CanActAs bidder]
+    createUser (User aliceId (Some firstBidder)) [CanActAs firstBidder]
+    createUser (User bobId (Some secondBidder )) [CanActAs secondBidder]
+    createUser (User caronId (Some thirdBidder )) [CanActAs thirdBidder]
+    createUser (User davidId (Some fourthBidder )) [CanActAs fourthBidder]
 
     submit auctioneer do
         createCmd AuctionAcc with
-            bidder = bidder
+            bidder = firstBidder
             auctioneer = auctioneer
             bidderId = "bidderId1"
             bidderName = "bidderName1"
@@ -50,15 +75,18 @@ setupUsers = script do
 data TestAuctionAccInfos = TestAuctionAccInfos with
     accInfo1: AuctionAcc 
     accInfo2: AuctionAcc 
-    accInfo3: AuctionAcc 
+    accInfo3: AuctionAcc
+    accInfo4: AuctionAcc 
 
-setupAuctionAccInfos : Script (TestParties, TestAuctionAccInfos)
+
+
+setupAuctionAccInfos : Script (TestParties, TestBidders, TestAuctionAccInfos )
 setupAuctionAccInfos = script do
-    testParties@TestParties{..} <- setupTestParties
+    (testParties@TestParties{..}, testBidders@TestBidders{..})  <- setupTestBidders
     let
         accInfo1 = AuctionAcc with  -- Change AuctionAccInfo to AuctionAcc
             auctioneer = auctioneer
-            bidder = bidder
+            bidder = firstBidder
             bidderId = "bidderId1"
             bidderName = "bidderName1"
             bidderPhone = Some "1234567891"
@@ -69,7 +97,7 @@ setupAuctionAccInfos = script do
 
         accInfo2 = AuctionAcc with  -- Change AuctionAccInfo to AuctionAcc
             auctioneer = auctioneer
-            bidder = bidder
+            bidder = secondBidder
             bidderId = "bidderId2"
             bidderName = "bidderName2"
             bidderPhone = Some "1234567892"
@@ -80,7 +108,7 @@ setupAuctionAccInfos = script do
 
         accInfo3 = AuctionAcc with  -- Change AuctionAccInfo to AuctionAcc
             auctioneer = auctioneer
-            bidder = bidder
+            bidder = thirdBidder
             bidderId = "bidderId3"
             bidderName = "bidderName3"
             bidderPhone = Some "1234567893"
@@ -89,5 +117,16 @@ setupAuctionAccInfos = script do
                 value = 0.0
                 currency = "USD"
 
-    return (testParties, TestAuctionAccInfos with {accInfo1, accInfo2, accInfo3})
- 
+        accInfo4 = AuctionAcc with  -- Change AuctionAccInfo to AuctionAcc
+            auctioneer = auctioneer
+            bidder = fourthBidder
+            bidderId = "bidderId4"
+            bidderName = "bidderName4"
+            bidderPhone = Some "1234567894"
+            isVerified = False
+            accBalance = Cash with
+                value = 0.0
+                currency = "USD"
+
+    return (testParties, testBidders, TestAuctionAccInfos with {accInfo1, accInfo2, accInfo3, accInfo4})
+  

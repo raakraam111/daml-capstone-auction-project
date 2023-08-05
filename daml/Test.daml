@@ -2,16 +2,16 @@ module Test where
 
 import Main
 import Setup
-import DA.Date 
 import Daml.Script
 
-testCreateAuctionAcc : Script (TestParties, TestAuctionAccInfos, ContractId AuctionAcc)
+testCreateAuctionAcc : Script (TestParties, TestBidders, TestAuctionAccInfos, ContractId AuctionAcc)
 testCreateAuctionAcc = script do
-    (testParties@TestParties{..}, testAuctionAccInfos@TestAuctionAccInfos{..}) <- setupAuctionAccInfos
+    (testParties@TestParties{..}, testBidders@TestBidders{..}, testAuctionAccInfos@TestAuctionAccInfos{..}) <- setupAuctionAccInfos
     -- 1. bidder creates a AuctionAcc contract
+     
     acc1 <- submit auctioneer do
         createCmd AuctionAcc with
-            bidder 
+            bidder = firstBidder
             auctioneer 
             bidderId = accInfo1.bidderId
             bidderName = accInfo1.bidderName
@@ -19,49 +19,27 @@ testCreateAuctionAcc = script do
             isVerified = accInfo1.isVerified 
             accBalance = accInfo1.accBalance 
 
-    return (testParties, testAuctionAccInfos, acc1)
+    return (testParties, testBidders, testAuctionAccInfos, acc1)
 
-testVerifyAuctionAcc : Script (TestParties, TestAuctionAccInfos , ContractId AuctionAcc)
+testVerifyAuctionAcc : Script (TestParties, TestBidders, TestAuctionAccInfos , ContractId AuctionAcc)
 testVerifyAuctionAcc = script do
-    (testParties@TestParties{..}, testAuctionAccInfos@TestAuctionAccInfos{..}, acc1Cid ) <- testCreateAuctionAcc
+    (testParties@TestParties{..}, testBidders@TestBidders{..}, testAuctionAccInfos@TestAuctionAccInfos{..}, acc1Cid ) <- testCreateAuctionAcc
     -- 2. auctioneer verifies the Auction contract
     acc1Verified <- submit auctioneer do
         exerciseCmd acc1Cid VerifyAcc with 
             isVerified = True 
 
-    return (testParties, testAuctionAccInfos, acc1Verified)
+    return (testParties, testBidders , testAuctionAccInfos, acc1Verified)
 
-testDepositAuctionAcc : Script (TestParties, TestAuctionAccInfos , ContractId AuctionAcc)
+testDepositAuctionAcc : Script (TestParties, TestBidders, TestAuctionAccInfos , ContractId AuctionAcc)
 testDepositAuctionAcc = script do
-    (testParties@TestParties{..}, testAuctionAccInfos@TestAuctionAccInfos{..}, acc2VerifiedCid) <- testVerifyAuctionAcc 
+    (testParties@TestParties{..}, testBidders@TestBidders{..}, testAuctionAccInfos@TestAuctionAccInfos{..}, acc2VerifiedCid) <- testVerifyAuctionAcc 
 
     -- 3. bidder deposits money to the Auction contract
-    acc1VerifiedAndDeposited <- submit bidder do 
+    acc1VerifiedAndDeposited <- submit firstBidder do 
         exerciseCmd acc2VerifiedCid Deposit with 
             amount = 1000.0 
 
-    return (testParties, testAuctionAccInfos, acc1VerifiedAndDeposited)
+    return (testParties, testBidders , testAuctionAccInfos, acc1VerifiedAndDeposited)
 
-testBidAuction : Script (TestParties, TestAuctionAccInfos , ContractId BidAuction)
-testBidAuction = script do
-    (testParties@TestParties{..}, testAuctionAccInfos@TestAuctionAccInfos{..}, acc1VerifiedAndDepositedCid) <- testDepositAuctionAcc 
-    -- auctionCid <- setupAuction
-    -- 4. auctioneer bids on the Auction contract
-    auctionOne <- submit auctioneer do
-        createCmd BidAuction with
-            bidder = bidder
-            auctioneer = auctioneer
-            highestBid = Cash with
-                value = 0.0
-                currency = "USD"
-            highestBidder = bidder
-            itemName = "itemName"
-            itemDetails = "itemDetails"
-            reservePrice = Cash with
-                value = 0.0
-                currency = "USD"
-            endDate = date 2021 Dec 31
-            isActive = True     
-
-
-    return (testParties, testAuctionAccInfos, auctionOne)
+ 
