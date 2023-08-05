@@ -104,6 +104,8 @@ template BidAuction
                 -- Check if the bid amount is greater than the reserve price
                 if(bidAmount >= reservePrice.value)
                     then do
+                    create AuctionAcc with
+                        accBalance.value = accBalVal - bidAmount
                 -- Update the list of bids with the new bid
                     create this with
                         bids = (bidder, bidAmount) :: bids
