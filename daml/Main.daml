@@ -4,7 +4,7 @@ type AuctionAccId = ContractId AuctionAcc
 type BidAuctionId = ContractId BidAuction
 
 data Cash = Cash with
-    value: Decimal 
+    value: Numeric 2 
     currency: Text 
         deriving (Show, Eq, Ord)
 
@@ -51,7 +51,7 @@ template AuctionAcc
         
         choice Deposit: AuctionAccId
             with
-                amount: Decimal 
+                amount: Numeric 2 
             controller bidder
             do 
                 assertMsg "Account not verified" ( isVerified)
@@ -63,12 +63,12 @@ template BidAuction
     with
         auctioneer: Party
         bidder : [Party] -- List of bidders participating in the auction
-        bids: [(Party, Decimal)] -- List of bids with the bidder and their bid amount
+        bids: [(Party, Numeric 2)] -- List of bids with the bidder and their bid amount
         itemName: Text
         itemDetails: Text
         reservePrice: Cash
         highestBid: Cash
-        highestBidder: Party
+        highestBidder: Optional Party
         endDate: Date
         isActive: Bool
 
@@ -77,32 +77,47 @@ template BidAuction
         observer bidder -- Observers are the bidders
 
         key (auctioneer, itemName): (Party, Text)
-        maintainer key._1
+        maintainer key._1 
 
-        ensure isActive
+        ensure reservePrice.value /= 0.0 -- Reserve price cannot be zero
 
         -- Choice Bid - Allows bidders to place bids on the auction
         choice Bid: ContractId BidAuction
             with
-                bidAmount: Decimal
+                bidAmount: Numeric 2
                 bidder: Party
                 bidderId: Text
-
             controller bidder -- Only the bidder can exercise the Bid choice
             do
                 -- Check if the auction is active
-                assertMsg "Auction is not active" isActive  
-                assertMsg "Bid amount must be greater than the current highest bid" (bidAmount > highestBid.value)
+                assertMsg "Auction is not active" isActive
+
+                -- Check if the bid amount is greater than the current highest bid
+                assertMsg "Bid amount must be greater than the current highest bid. " (bidAmount > highestBid.value)
 
                 -- Check if the bidder has enough balance in their AuctionAcc
                 bidderAcc <- fetchByKey @AuctionAcc (auctioneer, bidderId)
-                assertMsg "Bidder does not have a verified AuctionAcc" (bidderAcc._2.isVerified)
+                assertMsg "Bidder does not have a verified AuctionAcc" bidderAcc._2.isVerified
                 let accBalVal = bidderAcc._2.accBalance.value
                 assertMsg "Bidder does not have enough balance to place the bid" (accBalVal >= bidAmount)
 
+                -- Check if the bid amount is greater than the reserve price
+                if(bidAmount >= reservePrice.value)
+                    then do
                 -- Update the list of bids with the new bid
-                create this with
-                    bids = (bidder, bidAmount) :: bids
+                    create this with
+                        bids = (bidder, bidAmount) :: bids
+                        highestBidder = Some bidder
+                        highestBid.value = bidAmount
+                        highestBid.currency = "USD"
+                        isActive = False
+                else do
+                    -- Update the list of bids with the new bid
+                    create this with
+                        bids = (bidder, bidAmount) :: bids
+                        highestBidder = Some bidder
+                        highestBid.value = bidAmount
+                        highestBid.currency = "USD" 
 
         choice Cancel: BidAuctionId
             controller auctioneer
@@ -112,7 +127,7 @@ template BidAuction
                     isActive = False
                     
         -- non consuming choice to get all the bids
-        nonconsuming choice GetBids: [(Party, Decimal)]
+        nonconsuming choice GetBids: [(Party, Numeric 2)]
             controller auctioneer, bidder
             do
                 return bids
