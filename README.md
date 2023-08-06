@@ -61,7 +61,7 @@ The project is organized into three DAML modules:
 
 ## Supported Functionality
 
-The auction platform supports the following functionalities:
+The auction platform mainly supports the following functionalities:
 
 - Auctioneer can create auctions and set reserve prices for items.
 - Bidders can create and verify their accounts to participate in auctions.
