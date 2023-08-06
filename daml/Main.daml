@@ -1,4 +1,5 @@
 module Main where 
+import DA.Text (sha256)
 
 type AuctionAccId = ContractId AuctionAcc
 type BidAuctionId = ContractId BidAuction
@@ -7,6 +8,16 @@ data Cash = Cash with
     value: Numeric 2 
     currency: Text 
         deriving (Show, Eq, Ord)
+
+data Password = Password with
+    value: Text
+        deriving (Show, Eq, Ord)
+
+class Encryptable i o where
+    encrypt : i -> o
+
+instance Encryptable Password Text  where
+    encrypt p = sha256 p.value  
 
 template AuctionAcc
     with
@@ -17,7 +28,8 @@ template AuctionAcc
         bidderName: Text
         bidderPhone: Optional Text
         isVerified: Bool
-        accBalance: Cash
+        accBalance: Cash 
+        password : Text
     
     where
         signatory auctioneer
@@ -31,6 +43,7 @@ template AuctionAcc
                 appBidderId: Text
                 appBidderName: Text
                 appBidderPhone: Optional Text  
+                appPassword: Text
             controller bidder
             do
                 -- assertMsg "Account already exists" (not exists lookupByKey @AuctionAcc (auctioneer, bidderId))
@@ -38,7 +51,8 @@ template AuctionAcc
                     bidderId = appBidderId 
                     bidderName = appBidderName
                     bidderPhone = appBidderPhone  
-             
+                    password = encrypt (Password appPassword)
+                    
         choice VerifyAcc: AuctionAccId
             with
                 isVerified: Bool
@@ -104,8 +118,7 @@ template BidAuction
                 -- Check if the bid amount is greater than the reserve price
                 if(bidAmount >= reservePrice.value)
                     then do
-                    create AuctionAcc with
-                        accBalance.value = accBalVal - bidAmount
+                     
                 -- Update the list of bids with the new bid
                     create this with
                         bids = (bidder, bidAmount) :: bids

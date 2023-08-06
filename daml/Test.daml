@@ -7,6 +7,17 @@ import DA.List
 import DA.Date
 import Daml.Script
 
+
+{-
+    Happy paths
+    1. testCreateAuctionAcc - bidder creates a AuctionAcc contract
+    2. testVerifyAuctionAcc - auctioneer verifies the AuctionAcc contract
+    3. testDepositAuctionAcc - bidder deposits money to the AuctionAcc contract
+    4. testBidAuction - bidder bids on the AuctionAcc contract
+    5. testAuctionCloseOnReachingReservePrice - Auction closes when reserve price is reached
+    6. testCloseAuction - Auction closes when end time is reached
+-}
+
 testCreateAuctionAcc : Script (TestParties, TestBidders, TestAuctionAccInfos, [ContractId AuctionAcc])
 testCreateAuctionAcc = script do
     (testParties@TestParties{..}, testBidders@TestBidders{..}, testAuctionAccInfos@TestAuctionAccInfos{..}) <- setupAuctionAccInfos
@@ -20,7 +31,8 @@ testCreateAuctionAcc = script do
             bidderName = accInfo1.bidderName
             bidderPhone = accInfo1.bidderPhone
             isVerified = accInfo1.isVerified 
-            accBalance = accInfo1.accBalance 
+            accBalance = accInfo1.accBalance
+            password = accInfo1.password 
 
     acc2 <- submit auctioneer do
         createCmd AuctionAcc with
@@ -31,6 +43,7 @@ testCreateAuctionAcc = script do
             bidderPhone = accInfo2.bidderPhone
             isVerified = accInfo2.isVerified 
             accBalance = accInfo2.accBalance
+            password = accInfo2.password
 
     acc3 <- submit auctioneer do
         createCmd AuctionAcc with
@@ -41,6 +54,7 @@ testCreateAuctionAcc = script do
             bidderPhone = accInfo3.bidderPhone
             isVerified = accInfo3.isVerified 
             accBalance = accInfo3.accBalance
+            password = accInfo3.password
 
     acc4 <- submit auctioneer do
         createCmd AuctionAcc with
@@ -51,6 +65,7 @@ testCreateAuctionAcc = script do
             bidderPhone = accInfo4.bidderPhone
             isVerified = accInfo4.isVerified 
             accBalance = accInfo4.accBalance
+            password = accInfo4.password
 
     let accs = [acc1, acc2, acc3, acc4]
     return (testParties, testBidders, testAuctionAccInfos, accs)
@@ -191,7 +206,21 @@ testCloseAuction = script do
     acc1Closed <- submit auctioneer do 
         exerciseCmd acc1BidCid Cancel 
     return (testParties, testBidders , testAuctionAccInfos, acc1Closed)
-
+ 
+testGetBids : Script ()
+testGetBids = script do
+    (testParties@TestParties{..}, testBidders@TestBidders{..}, testAuctionAccInfos@TestAuctionAccInfos{..}, testBid ) <- testBidAuction
+ 
+    -- 6. auctioneer gets the bids for the Auction contract
+    acc1Bids <- submitMulti [auctioneer,firstBidder, secondBidder, thirdBidder, fourthBidder][] do 
+        exerciseCmd testBid GetBids
+    return ()
+{-
+    Unhappy paths
+    1. Bidder cannot bid for the Auction contract if the auction is closed
+    2. Bidder cannot bid for the Auction contract if the bid amount is less than the highest bid
+    3. Bidder cannot bid for the Auction contract if the bid amount is less than the reserve price
+-}
 cantBidForClosedAuction: Script()
 cantBidForClosedAuction = script do
     (testParties@TestParties{..}, testBidders@TestBidders{..}, testAuctionAccInfos@TestAuctionAccInfos{..}, acc1Closed) <- testCloseAuction
@@ -232,3 +261,6 @@ cantCreateBidAuctionWithZeroReservePrice = script do
             isActive = True
 
     return ()
+
+  
+   
