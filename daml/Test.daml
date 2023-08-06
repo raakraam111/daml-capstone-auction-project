@@ -16,6 +16,8 @@ import Daml.Script
     4. testBidAuction - bidder bids on the AuctionAcc contract
     5. testAuctionCloseOnReachingReservePrice - Auction closes when reserve price is reached
     6. testCloseAuction - Auction closes when end time is reached
+    7. testGetBids - calls the non-consuming getBids choice
+    8. testGetLargeBids - script to get large bids GT 1500 and also print in sorted order of bid amount
 -}
 
 testCreateAuctionAcc : Script (TestParties, TestBidders, TestAuctionAccInfos, [ContractId AuctionAcc])
@@ -213,8 +215,37 @@ testGetBids = script do
  
     -- 6. auctioneer gets the bids for the Auction contract
     acc1Bids <- submitMulti [auctioneer,firstBidder, secondBidder, thirdBidder, fourthBidder][] do 
-        exerciseCmd testBid GetBids
+       exerciseCmd testBid GetBids
     return ()
+
+filterLargeBids : [(Party, Numeric 2)] -> [(Party, Numeric 2)]
+filterLargeBids bids = filter (\(_, amount) -> amount > 1000.0) bids
+
+
+testGetLargeBids : Script ()
+testGetLargeBids = script do
+    (testParties@TestParties{..}, testBidders@TestBidders{..}, testAuctionAccInfos@TestAuctionAccInfos{..}, testBid ) <- testBidAuction
+  
+    allBids <- query @BidAuction auctioneer -- Fetch all bids
+    let extracted = map (\x -> x._2 ) allBids
+
+    -- extract a field called bids from notes
+    let bids = map (\x -> x.bids ) extracted 
+
+    -- bids output is a list of list of tuples, so we need to flatten it
+    let bids1 = concat bids
+
+    -- now we have a list of tuples, 2nd element contains bids, we need to filter the large bids > 1500 
+    let largeBids = filter (\(_, amount) -> amount > 1500.0) bids1
+
+    -- sort in ascending order
+    let sortedBids = sortOn snd largeBids
+ 
+    debug $ "Large Bids greater than 1500 USD: " <> show largeBids
+    debug $ "Sorted Bids greater than 1500 USD: " <> show sortedBids
+    return ()
+
+
 {-
     Unhappy paths
     1. Bidder cannot bid for the Auction contract if the auction is closed
@@ -225,8 +256,8 @@ cantBidForClosedAuction: Script()
 cantBidForClosedAuction = script do
     (testParties@TestParties{..}, testBidders@TestBidders{..}, testAuctionAccInfos@TestAuctionAccInfos{..}, acc1Closed) <- testCloseAuction
     submitMustFail firstBidder do 
-        exerciseCmd acc1Closed Bid with 
-            bidAmount = 5000.0
+        exerciseCmd acc1Closed Bid with -- auction is closed
+            bidAmount = 5000.0 
             bidder = fourthBidder
             bidderId = accInfo1.bidderId 
 
@@ -237,7 +268,7 @@ cantBidMoreThanAmountInAuctionAcc = script do
     (testParties@TestParties{..}, testBidders@TestBidders{..}, testAuctionAccInfos@TestAuctionAccInfos{..}, acc4Bid) <- testBidAuction
     submitMustFail firstBidder do 
         exerciseCmd acc4Bid Bid with 
-            bidAmount = 6000.0
+            bidAmount = 6000.0 -- more than amount in auction account
             bidder = fourthBidder
             bidderId = accInfo1.bidderId 
 
